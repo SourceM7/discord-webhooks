@@ -11,7 +11,7 @@ env:
 jobs:
   send-verse:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Fetch verse and send to Discord
         run: |
@@ -19,13 +19,14 @@ jobs:
           verse_number=$((RANDOM % 6236 + 1))
           verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
-
+          
           # Step 2: Extract data into shell variables using jq
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
           surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
           verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
+          audio_url=$(echo "$verse_response" | jq -r '.data.audio')
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
-
+          
           # Step 3: Securely build the JSON payload using jq
           # This is the key change. We pass the shell variables into jq,
           # which handles special characters and builds valid JSON.
@@ -34,16 +35,17 @@ jobs:
             --arg tafseer "$tafseer_text" \
             --arg surah "$surah_name_arabic" \
             --arg ayah_num "$verse_num" \
+            --arg audio "$audio_url" \
             '{
               "embeds": [{
-                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer),
+                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer + "\n\n🎧 [استمع للآية](" + $audio + ")"),
                 "color": 36864,
                 "footer": {
                   "text": ($surah + "، الآية " + $ayah_num)
                 }
               }]
             }')
-
+          
           # Step 4: Send the embed to Discord, now with verbose error output
           # The --fail flag will make the step fail if Discord returns an error.
           curl --fail -H "Content-Type: application/json" \
