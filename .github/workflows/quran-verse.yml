@@ -17,14 +17,17 @@ jobs:
         run: |
           verse_number=$((RANDOM % 6236 + 1))
           
-          response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
+          verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           
-          verse_text=$(echo "$response" | jq -r '.data.text')
-          surah_name=$(echo "$response" | jq -r '.data.surah.englishName')
-          verse_num=$(echo "$response" | jq -r '.data.numberInSurah')
-          surah_num=$(echo "$response" | jq -r '.data.surah.number')
+          verse_text=$(echo "$verse_response" | jq -r '.data.text')
+          surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
+          verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
+          surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
+          
+          tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
+          tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
           
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "{\"content\":\"**${verse_text}**\\n\\n*سورة ${surah_name} - الآية ${verse_num}*\"}" \
+               -d "{\"content\":\"﴿ **${verse_text}** ﴾\\n\\n📖 **التفسير:**\\n${tafseer_text}\\n\\n*سورة ${surah_name_arabic} - الآية ${verse_num}*\"}" \
                "$DISCORD_WEBHOOK_URL"
