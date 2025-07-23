@@ -27,8 +27,9 @@ jobs:
           audio_url=$(echo "$verse_response" | jq -r '.data.audio')
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
           
-          # Step 3: Download audio file
-          audio_filename="verse_${verse_number}.mp3"
+          # Step 3: Download audio file with descriptive name
+          # Create filename with surah and verse info
+          audio_filename="${surah_name_arabic}_${verse_num}.mp3"
           curl -s -o "$audio_filename" "$audio_url"
           
           # Step 4: Build JSON payload for multipart request
