@@ -29,5 +29,5 @@ jobs:
           
           curl -H "Content-Type: application/json" \
                -X POST \
-               -d "{\"content\":\"﴿ **${verse_text}** ﴾\\n\\n📖 **التفسير:**\\n${tafseer_text}\\n\\n*سورة ${surah_name_arabic} - الآية ${verse_num}*\"}" \
+               -d "{\"content\":\"﴿ **${verse_text}** ﴾\\n\\n **التفسير:**\\n${tafseer_text}\\n\\n*${surah_name_arabic} - الآية ${verse_num}*\"}" \
                "$DISCORD_WEBHOOK_URL"
