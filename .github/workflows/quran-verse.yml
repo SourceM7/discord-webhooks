@@ -13,32 +13,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Send verse to Discord
+      - name: Fetch verse and send to Discord
         run: |
+          # Step 1: Fetch data from the APIs
           verse_number=$((RANDOM % 6236 + 1))
-          
           verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
-          
+          tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
+
+          # Step 2: Extract data into shell variables using jq
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
           surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
           verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
-          
-          tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
-          
-    
-          json_payload=$(printf '{
-            "embeds": [{
-              "description": "﴿ **%s** ﴾\n\n**التفسير الميسر**\n%s",
-              "color": 36864,
-              "footer": {
-                "text": "%s، الآية %s"
-              }
-            }]
-          }' "$verse_text" "$tafseer_text" "$surah_name_arabic" "$verse_num")
-          
-          # Send the embed to Discord
-          curl -H "Content-Type: application/json" \
+
+          # Step 3: Securely build the JSON payload using jq
+          # This is the key change. We pass the shell variables into jq,
+          # which handles special characters and builds valid JSON.
+          json_payload=$(jq -n \
+            --arg verse "$verse_text" \
+            --arg tafseer "$tafseer_text" \
+            --arg surah "$surah_name_arabic" \
+            --arg ayah_num "$verse_num" \
+            '{
+              "embeds": [{
+                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer),
+                "color": 36864,
+                "footer": {
+                  "text": ($surah + "، الآية " + $ayah_num)
+                }
+              }]
+            }')
+
+          # Step 4: Send the embed to Discord, now with verbose error output
+          # The --fail flag will make the step fail if Discord returns an error.
+          curl --fail -H "Content-Type: application/json" \
                -X POST \
                -d "$json_payload" \
                "$DISCORD_WEBHOOK_URL"
