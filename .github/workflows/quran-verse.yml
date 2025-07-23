@@ -1,0 +1,30 @@
+name: Send Random Quran Verse
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+env:
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+jobs:
+  send-verse:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send verse to Discord
+        run: |
+          verse_number=$((RANDOM % 6236 + 1))
+          
+          response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
+          
+          verse_text=$(echo "$response" | jq -r '.data.text')
+          surah_name=$(echo "$response" | jq -r '.data.surah.englishName')
+          verse_num=$(echo "$response" | jq -r '.data.numberInSurah')
+          surah_num=$(echo "$response" | jq -r '.data.surah.number')
+          
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"content\":\"**${verse_text}**\\n\\n*سورة ${surah_name} - الآية ${verse_num}*\"}" \
+               "$DISCORD_WEBHOOK_URL"
