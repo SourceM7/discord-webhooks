@@ -22,28 +22,20 @@ jobs:
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
           surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
           verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
-          surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
           
           tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
           
-          # Prepare the JSON payload for the Discord embed
+    
           json_payload=$(printf '{
             "embeds": [{
-              "description": "﴿ **%s** ﴾",
+              "description": "﴿ **%s** ﴾\n\n**التفسير الميسر**\n%s",
               "color": 36864,
-              "fields": [
-                {
-                  "name": "**التفسير الميسر**",
-                  "value": "%s"
-                },
-                {
-                  "name": "**المصدر**",
-                  "value": "*%s - الآية %s (السورة رقم %s)*"
-                }
-              ]
+              "footer": {
+                "text": "%s، الآية %s"
+              }
             }]
-          }' "$verse_text" "$tafseer_text" "$surah_name_arabic" "$verse_num" "$surah_num")
+          }' "$verse_text" "$tafseer_text" "$surah_name_arabic" "$verse_num")
           
           # Send the embed to Discord
           curl -H "Content-Type: application/json" \
