@@ -1,14 +1,17 @@
 name: Send Random Quran Verse
+
 on:
   schedule:
-    - cron: '0 * '*
+    - cron: '0 * * * *'
   workflow_dispatch:
+
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 jobs:
   send-verse:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Fetch verse and send to Discord
         run: |
@@ -16,19 +19,31 @@ jobs:
           verse_number=$((RANDOM % 6236 + 1))
           verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
-
+          
           # Step 2: Extract data into shell variables using jq
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
           surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
           verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
+          surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
           audio_url=$(echo "$verse_response" | jq -r '.data.audio')
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
-
+          
+          # Build verse image URL and download with white background
+          verse_image_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_num}_${verse_num}.png"
+          verse_image_file="verse_${surah_num}_${verse_num}.png"
+          verse_image_white_bg="verse_${surah_num}_${verse_num}_white.png"
+          
+          # Download original transparent image
+          curl -s -o "$verse_image_file" "$verse_image_url"
+          
+          # Add white background using ImageMagick (available in GitHub Actions)
+          convert "$verse_image_file" -background white -alpha remove -alpha off "$verse_image_white_bg"
+          
           # Step 3: Download audio file with descriptive name
           # Create filename with surah and verse info
-          audio_filename="${surah_namearabic}${verse_num}.mp3"
+          audio_filename="${surah_name_arabic}_${verse_num}.mp3"
           curl -s -o "$audio_filename" "$audio_url"
-
+          
           # Step 4: Build JSON payload for multipart request
           json_payload=$(jq -n \
             --arg verse "$verse_text" \
@@ -37,19 +52,20 @@ jobs:
             --arg ayah_num "$verse_num" \
             '{
               "embeds": [{
-                "description": ("﴿ " + $verse + " ﴾\n\nالتفسير الميسر\n" + $tafseer),
+                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer),
                 "color": 36864,
                 "footer": {
                   "text": ($surah + "، الآية " + $ayah_num)
                 }
               }]
             }')
-
-          # Step 5: Send with audio file attachment using multipart/form-data
+          
+          # Step 5: Send with audio file and image attachments using multipart/form-data
           curl --fail \
                -F "payload_json=$json_payload" \
-               -F "file=@$audio_filename" \
+               -F "file1=@$audio_filename" \
+               -F "file2=@$verse_image_white_bg" \
                "$DISCORD_WEBHOOK_URL"
-
+          
           # Step 6: Cleanup
-          rm -f "$audio_filename"
+          rm -f "$audio_filename" "$verse_image_file" "$verse_image_white_bg"
