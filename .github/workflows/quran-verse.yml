@@ -24,8 +24,12 @@ jobs:
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
           surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
           verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
+          surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
           audio_url=$(echo "$verse_response" | jq -r '.data.audio')
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
+          
+          # Build verse image URL
+          verse_image_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_num}_${verse_num}.png"
           
           # Step 3: Download audio file with descriptive name
           # Create filename with surah and verse info
@@ -38,10 +42,14 @@ jobs:
             --arg tafseer "$tafseer_text" \
             --arg surah "$surah_name_arabic" \
             --arg ayah_num "$verse_num" \
+            --arg image_url "$verse_image_url" \
             '{
               "embeds": [{
                 "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer),
                 "color": 36864,
+                "image": {
+                  "url": $image_url
+                },
                 "footer": {
                   "text": ($surah + "، الآية " + $ayah_num)
                 }
