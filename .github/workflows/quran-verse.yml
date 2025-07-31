@@ -28,7 +28,6 @@ jobs:
           verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
           english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/en.asad")
-          english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${surah_number}/${ayah_in_surah}.json")
 
           verse_text=$(echo "$verse_json"    | jq -r '.data.text')
           surah_name_ar=$(echo "$verse_json" | jq -r '.data.surah.name')
@@ -39,6 +38,8 @@ jobs:
           tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
           english_text=$(echo "$english_json" | jq -r '.data.text')
           surah_name_en=$(echo "$english_json"| jq -r '.data.surah.englishName')
+
+          english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${surah_number}/${ayah_in_surah}.json")
           english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
 
           img_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_number}_${ayah_in_surah}.png"
