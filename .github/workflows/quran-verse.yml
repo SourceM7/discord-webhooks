@@ -92,7 +92,8 @@ jobs:
               ]
             }')
 
+          echo "$english_payload" > english_temp.json
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -F "payload_json=$english_payload"
+               -F "payload_json=@english_temp.json"
 
-          rm -f "$img_raw" "$img_white" "$audio_file"
+          rm -f "$img_raw" "$img_white" "$audio_file" english_temp.json
