@@ -1,82 +1,99 @@
 name: Send Random Quran Verse
+
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'      # every hour
   workflow_dispatch:
+
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
 jobs:
   send-verse:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Install ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
-        
-      - name: Fetch verse and send to Discord
+      - name: Install ImageMagick & jq
         run: |
-          # Step 1: Fetch data from the APIs
-          verse_number=$((RANDOM % 6236 + 1))
-          verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
-          tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
-          english_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/en.asad")
-          
-          # Step 2: Extract data into shell variables using jq
-          verse_text=$(echo "$verse_response" | jq -r '.data.text')
-          surah_name_arabic=$(echo "$verse_response" | jq -r '.data.surah.name')
-          verse_num=$(echo "$verse_response" | jq -r '.data.numberInSurah')
-          surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
-          audio_url=$(echo "$verse_response" | jq -r '.data.audio')
-          tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
-          english_text=$(echo "$english_response" | jq -r '.data.text')
-          surah_name_english=$(echo "$english_response" | jq -r '.data.surah.englishName')
-          
-          # Build verse image URL and download with white background
-          verse_image_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_num}_${verse_num}.png"
-          verse_image_file="verse_${surah_num}_${verse_num}.png"
-          verse_image_white_bg="verse_${surah_num}_${verse_num}_white.png"
-          
-          # Download original transparent image
-          curl -s -o "$verse_image_file" "$verse_image_url"
-          
-          # Add white background using ImageMagick (available in GitHub Actions)
-          convert "$verse_image_file" -background white -alpha remove -alpha off "$verse_image_white_bg"
-          
-          # Step 3: Download audio file with descriptive name
-          # Create filename with surah and verse info
-          audio_filename="${surah_name_arabic}_${verse_num}.mp3"
-          curl -s -o "$audio_filename" "$audio_url"
-          
-          # Step 4: Build JSON payload for multipart request
-          # Create a temporary file for the JSON payload to handle special characters
-          cat > payload.json << 'EOF'
-          {
-            "embeds": [{
-              "description": "",
-              "color": 36864,
-              "footer": {
-                "text": ""
-              }
-            }]
-          }
-          EOF
-          
-          # Use jq to properly escape and insert the text
-          json_payload=$(jq \
-            --arg verse "$verse_text" \
-            --arg tafseer "$tafseer_text" \
-            --arg surah "$surah_name_arabic" \
-            --arg ayah_num "$verse_num" \
-            --arg english "$english_text" \
-            --arg surah_eng "$surah_name_english" \
-            '.embeds[0].description = ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer + "\n\n**English Translation**\n" + $english) | .embeds[0].footer.text = ($surah + "، الآية " + $ayah_num + " | " + $surah_eng + ", Verse " + $ayah_num)' payload.json)
-          
-          # Step 5: Send with audio file and image attachments using multipart/form-data
-          curl --fail \
-               -F "payload_json=$json_payload" \
-               -F "file1=@$audio_filename" \
-               -F "file2=@$verse_image_white_bg" \
-               "$DISCORD_WEBHOOK_URL"
-          
-          # Step 6: Cleanup
-          rm -f "$audio_filename" "$verse_image_file" "$verse_image_white_bg" payload.json
+          sudo apt-get update
+          sudo apt-get install -y imagemagick jq
+
+      - name: Fetch verse, build embed and send
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # --------------------------------------------------------
+          # 1. Pick random ayah and fetch data
+          # --------------------------------------------------------
+          AYAH_NUMBER=$(( RANDOM % 6236 + 1 ))
+
+          verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${AYAH_NUMBER}/ar.alafasy")
+          tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${AYAH_NUMBER}/ar.muyassar")
+          english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${AYAH_NUMBER}/en.asad")
+
+          verse_text=$(echo "$verse_json"   | jq -r '.data.text')
+          surah_name_ar=$(echo "$verse_json"| jq -r '.data.surah.name')
+          surah_number=$(echo "$verse_json"| jq -r '.data.surah.number')
+          ayah_in_surah=$(echo "$verse_json"| jq -r '.data.numberInSurah')
+          audio_url=$(echo "$verse_json"    | jq -r '.data.audio')
+
+          tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
+          english_text=$(echo "$english_json" | jq -r '.data.text')
+          surah_name_en=$(echo "$english_json"| jq -r '.data.surah.englishName')
+
+          # --------------------------------------------------------
+          # 2. Prepare ayah image (white background)
+          # --------------------------------------------------------
+          img_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_number}_${ayah_in_surah}.png"
+          img_raw="ayah_${surah_number}_${ayah_in_surah}.png"
+          img_white="ayah_${surah_number}_${ayah_in_surah}_white.png"
+
+          curl -s -o "$img_raw" "$img_url"
+          convert "$img_raw" -background white -alpha remove -alpha off "$img_white"
+
+          # --------------------------------------------------------
+          # 3. Download audio
+          # --------------------------------------------------------
+          safe_surah_name_ar=$(echo "$surah_name_ar" | tr ' ' _)
+          audio_file="${safe_surah_name_ar}_${ayah_in_surah}.mp3"
+          curl -s -o "$audio_file" "$audio_url"
+
+          # --------------------------------------------------------
+          # 4. Build embed JSON (trim to 4096 chars)
+          # --------------------------------------------------------
+          max_len=4096
+          description="﴿ **${verse_text}** ﴾\n\n**التفسير الميسر**\n${tafseer_text}\n\n**English Translation**\n${english_text}"
+          if [ ${#description} -gt $max_len ]; then
+            description="${description:0:$((max_len-3))}..."
+          fi
+
+          jq -n \
+            --arg desc   "$description" \
+            --arg surahA "$surah_name_ar" \
+            --arg surahE "$surah_name_en" \
+            --arg ayahN  "$ayah_in_surah" \
+            '{
+              embeds: [
+                {
+                  description: $desc,
+                  color: 36864,
+                  footer: {
+                    text: ($surahA + "، الآية " + $ayahN + " | " + $surahE + ", Verse " + $ayahN)
+                  }
+                }
+              ]
+            }' > payload.json
+
+          # --------------------------------------------------------
+          # 5. Send to Discord
+          # --------------------------------------------------------
+          curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
+            -F "payload_json=@payload.json;type=application/json" \
+            -F "file1=@${audio_file}" \
+            -F "file2=@${img_white}"
+
+          # --------------------------------------------------------
+          # 6. Clean up
+          # --------------------------------------------------------
+          rm -f "$img_raw" "$img_white" "$audio_file" payload.json
