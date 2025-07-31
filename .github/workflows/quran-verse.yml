@@ -48,22 +48,28 @@ jobs:
           curl -s -o "$audio_filename" "$audio_url"
           
           # Step 4: Build JSON payload for multipart request
-          json_payload=$(jq -n \
+          # Create a temporary file for the JSON payload to handle special characters
+          cat > payload.json << 'EOF'
+          {
+            "embeds": [{
+              "description": "",
+              "color": 36864,
+              "footer": {
+                "text": ""
+              }
+            }]
+          }
+          EOF
+          
+          # Use jq to properly escape and insert the text
+          json_payload=$(jq \
             --arg verse "$verse_text" \
             --arg tafseer "$tafseer_text" \
             --arg surah "$surah_name_arabic" \
             --arg ayah_num "$verse_num" \
             --arg english "$english_text" \
             --arg surah_eng "$surah_name_english" \
-            '{
-              "embeds": [{
-                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer + "\n\n**English Translation**\n" + $english),
-                "color": 36864,
-                "footer": {
-                  "text": ($surah + "، الآية " + $ayah_num + " | " + $surah_eng + ", Verse " + $ayah_num)
-                }
-              }]
-            }')
+            '.embeds[0].description = ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer + "\n\n**English Translation**\n" + $english) | .embeds[0].footer.text = ($surah + "، الآية " + $ayah_num + " | " + $surah_eng + ", Verse " + $ayah_num)' payload.json)
           
           # Step 5: Send with audio file and image attachments using multipart/form-data
           curl --fail \
@@ -73,4 +79,4 @@ jobs:
                "$DISCORD_WEBHOOK_URL"
           
           # Step 6: Cleanup
-          rm -f "$audio_filename" "$verse_image_file" "$verse_image_white_bg"
+          rm -f "$audio_filename" "$verse_image_file" "$verse_image_white_bg" payload.json
