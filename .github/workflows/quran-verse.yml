@@ -1,13 +1,10 @@
 name: Send Random Quran Verse
-
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * '*
   workflow_dispatch:
-
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-
 jobs:
   send-verse:
     runs-on: ubuntu-latest
@@ -22,6 +19,7 @@ jobs:
           verse_number=$((RANDOM % 6236 + 1))
           verse_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           tafseer_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
+          english_response=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/en.asad")
           
           # Step 2: Extract data into shell variables using jq
           verse_text=$(echo "$verse_response" | jq -r '.data.text')
@@ -30,6 +28,8 @@ jobs:
           surah_num=$(echo "$verse_response" | jq -r '.data.surah.number')
           audio_url=$(echo "$verse_response" | jq -r '.data.audio')
           tafseer_text=$(echo "$tafseer_response" | jq -r '.data.text')
+          english_text=$(echo "$english_response" | jq -r '.data.text')
+          surah_name_english=$(echo "$english_response" | jq -r '.data.surah.englishName')
           
           # Build verse image URL and download with white background
           verse_image_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_num}_${verse_num}.png"
@@ -53,12 +53,14 @@ jobs:
             --arg tafseer "$tafseer_text" \
             --arg surah "$surah_name_arabic" \
             --arg ayah_num "$verse_num" \
+            --arg english "$english_text" \
+            --arg surah_eng "$surah_name_english" \
             '{
               "embeds": [{
-                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer),
+                "description": ("﴿ **" + $verse + "** ﴾\n\n**التفسير الميسر**\n" + $tafseer + "\n\n**English Translation**\n" + $english),
                 "color": 36864,
                 "footer": {
-                  "text": ($surah + "، الآية " + $ayah_num)
+                  "text": ($surah + "، الآية " + $ayah_num + " | " + $surah_eng + ", Verse " + $ayah_num)
                 }
               }]
             }')
