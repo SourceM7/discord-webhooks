@@ -28,6 +28,7 @@ jobs:
           verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
           tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
           english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/en.asad")
+          english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${surah_number}/${ayah_in_surah}.json")
 
           verse_text=$(echo "$verse_json"    | jq -r '.data.text')
           surah_name_ar=$(echo "$verse_json" | jq -r '.data.surah.name')
@@ -38,6 +39,7 @@ jobs:
           tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
           english_text=$(echo "$english_json" | jq -r '.data.text')
           surah_name_en=$(echo "$english_json"| jq -r '.data.surah.englishName')
+          english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
 
           img_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_number}_${ayah_in_surah}.png"
           img_raw="ayah_${surah_number}_${ayah_in_surah}.png"
@@ -68,18 +70,19 @@ jobs:
             }' > arabic_payload.json
 
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -F "payload_json=@arabic_payload.json;type=application/json" \
+               -F "payload_json=@arabic_payload.json" \
                -F "file1=@${audio_file}" \
                -F "file2=@${img_white}"
 
           jq -n \
             --arg eng     "$english_text" \
+            --arg eng_tafseer "$english_tafseer_text" \
             --arg surahE  "$surah_name_en" \
             --arg ayahN   "$ayah_in_surah" \
             '{
               embeds: [
                 {
-                  description: ("**" + $eng + "**"),
+                  description: ($eng + "\n\n**Commentary (Al-Jalalayn)**\n" + $eng_tafseer),
                   color: 36864,
                   footer: {
                     text: ($surahE + ", Verse " + $ayahN)
@@ -89,6 +92,6 @@ jobs:
             }' > english_payload.json
 
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -F "payload_json=@english_payload.json;type=application/json"
+               -F "payload_json=@english_payload.json"
 
           rm -f "$img_raw" "$img_white" "$audio_file" arabic_payload.json english_payload.json
