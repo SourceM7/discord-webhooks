@@ -53,7 +53,7 @@ jobs:
           audio_file="${safe_surah}_${ayah_in_surah}.mp3"
           curl -s -o "$audio_file" "$audio_url"
 
-          jq -n \
+          arabic_payload=$(jq -n \
             --arg verse   "$verse_text" \
             --arg tafseer "$tafseer_text" \
             --arg surahA  "$surah_name_ar" \
@@ -68,14 +68,14 @@ jobs:
                   }
                 }
               ]
-            }' > arabic_payload.json
+            }')
 
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -F "payload_json=@arabic_payload.json" \
+               -F "payload_json=$arabic_payload" \
                -F "file1=@${audio_file}" \
                -F "file2=@${img_white}"
 
-          jq -n \
+          english_payload=$(jq -n \
             --arg eng     "$english_text" \
             --arg eng_tafseer "$english_tafseer_text" \
             --arg surahE  "$surah_name_en" \
@@ -90,9 +90,9 @@ jobs:
                   }
                 }
               ]
-            }' > english_payload.json
+            }')
 
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -F "payload_json=@english_payload.json"
+               -F "payload_json=$english_payload"
 
-          rm -f "$img_raw" "$img_white" "$audio_file" arabic_payload.json english_payload.json
+          rm -f "$img_raw" "$img_white" "$audio_file"
