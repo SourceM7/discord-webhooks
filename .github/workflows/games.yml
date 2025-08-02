@@ -2,7 +2,8 @@ name: Send Free Multiplayer Game
 
 on:
   schedule:
-    - cron: '0 12 * * *'
+    # Runs at the beginning of every hour
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 env:
@@ -18,95 +19,81 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Fetch random free multiplayer game and send
+      - name: Fetch and send 3 random free multiplayer games
         shell: bash
         run: |
           set -euo pipefail
 
+          # Fetch all games and filter for multiplayer genres
           games_json=$(curl -s "https://www.freetogame.com/api/games")
-          
           multiplayer_games=$(echo "$games_json" | jq '[.[] | select(.genre == "Shooter" or .genre == "MMORPG" or .genre == "Battle Royale" or .genre == "MOBA" or .genre == "MMO" or .genre == "Racing" or .genre == "Sports" or .genre == "Strategy")]')
           
+          # Check if any multiplayer games were found
           game_count=$(echo "$multiplayer_games" | jq 'length')
-          
           if [ "$game_count" -eq 0 ]; then
             echo "No multiplayer games found"
             exit 1
           fi
-          
-          random_index=$((RANDOM % game_count))
-          selected_game=$(echo "$multiplayer_games" | jq ".[$random_index]")
-          
-          game_title=$(echo "$selected_game" | jq -r '.title')
-          game_description=$(echo "$selected_game" | jq -r '.short_description')
-          game_thumbnail=$(echo "$selected_game" | jq -r '.thumbnail')
-          game_url=$(echo "$selected_game" | jq -r '.game_url')
-          game_genre=$(echo "$selected_game" | jq -r '.genre')
-          game_platform=$(echo "$selected_game" | jq -r '.platform')
-          game_publisher=$(echo "$selected_game" | jq -r '.publisher')
-          game_developer=$(echo "$selected_game" | jq -r '.developer')
-          release_date=$(echo "$selected_game" | jq -r '.release_date')
 
-          payload=$(jq -n \
-            --arg title "$game_title" \
-            --arg desc "$game_description" \
-            --arg thumbnail "$game_thumbnail" \
-            --arg url "$game_url" \
-            --arg genre "$game_genre" \
-            --arg platform "$game_platform" \
-            --arg publisher "$game_publisher" \
-            --arg developer "$game_developer" \
-            --arg release "$release_date" \
-            '{
-              embeds: [
-                {
-                  title: $title,
-                  description: $desc,
-                  url: $url,
-                  color: 3447003,
-                  thumbnail: {
-                    url: $thumbnail
-                  },
-                  fields: [
-                    {
-                      name: "Genre",
-                      value: $genre,
-                      inline: true
-                    },
-                    {
-                      name: "Platform",
-                      value: $platform,
-                      inline: true
-                    },
-                    {
-                      name: "Publisher",
-                      value: $publisher,
-                      inline: true
-                    },
-                    {
-                      name: "Developer",
-                      value: $developer,
-                      inline: true
-                    },
-                    {
-                      name: "Release Date",
-                      value: $release,
-                      inline: true
-                    },
-                    {
-                      name: "Price",
-                      value: "Free to Play",
-                      inline: true
-                    }
-                  ],
-                  footer: {
-                    text: "Free Multiplayer Game of the Day"
-                  },
-                  timestamp: (now | todate)
-                }
-              ]
-            }')
+          # Shuffle the list and select the first 3 games.
+          # The -c flag outputs each game object on a new line.
+          selected_games=$(echo "$multiplayer_games" | jq -c 'shuffle | .[0:3] | .[]')
 
-          curl --fail -X POST "$GAME_DISCORD_WEBHOOK_URL" \
-               -H "Content-Type: application/json" \
-               -d "$payload"
+          # Loop through each of the 3 selected games
+          for game in $selected_games; do
+            # Extract details for the current game
+            game_title=$(echo "$game" | jq -r '.title')
+            game_description=$(echo "$game" | jq -r '.short_description')
+            game_thumbnail=$(echo "$game" | jq -r '.thumbnail')
+            game_url=$(echo "$game" | jq -r '.game_url')
+            game_genre=$(echo "$game" | jq -r '.genre')
+            game_platform=$(echo "$game" | jq -r '.platform')
+            game_publisher=$(echo "$game" | jq -r '.publisher')
+            game_developer=$(echo "$game" | jq -r '.developer')
+            release_date=$(echo "$game" | jq -r '.release_date')
+
+            # Build the JSON payload for the Discord embed
+            payload=$(jq -n \
+              --arg title "$game_title" \
+              --arg desc "$game_description" \
+              --arg thumbnail "$game_thumbnail" \
+              --arg url "$game_url" \
+              --arg genre "$game_genre" \
+              --arg platform "$game_platform" \
+              --arg publisher "$game_publisher" \
+              --arg developer "$game_developer" \
+              --arg release "$release_date" \
+              '{
+                embeds: [
+                  {
+                    title: $title,
+                    description: $desc,
+                    url: $url,
+                    color: 3447003,
+                    thumbnail: {
+                      url: $thumbnail
+                    },
+                    fields: [
+                      { name: "Genre", value: $genre, inline: true },
+                      { name: "Platform", value: $platform, inline: true },
+                      { name: "Publisher", value: $publisher, inline: true },
+                      { name: "Developer", value: $developer, inline: true },
+                      { name: "Release Date", value: $release, inline: true },
+                      { name: "Price", value: "Free to Play", inline: true }
+                    ],
+                    footer: {
+                      text: "Free Multiplayer Game of the Hour"
+                    },
+                    timestamp: (now | todate)
+                  }
+                ]
+              }')
+
+            # Send the payload to the Discord webhook
+            curl --fail -X POST "$GAME_DISCORD_WEBHOOK_URL" \
+                 -H "Content-Type: application/json" \
+                 -d "$payload"
+            
+            # Add a small delay to avoid hitting Discord's rate limits
+            sleep 1
+          done
