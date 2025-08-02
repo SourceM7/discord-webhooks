@@ -14,10 +14,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install jq
+      - name: Install latest jq (for shuffle support)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+          # The default jq in some runner images is too old and lacks the 'shuffle' function.
+          # This step downloads and installs a modern version of jq.
+          sudo curl -L https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 -o /usr/local/bin/jq
+          sudo chmod +x /usr/local/bin/jq
+          jq --version # Verify installation
 
       - name: Fetch and send 3 random free multiplayer games
         shell: bash
