@@ -14,14 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install latest jq (for shuffle support)
-        run: |
-          # The default jq in some runner images is too old and lacks the 'shuffle' function.
-          # This step downloads and installs a modern version of jq.
-          sudo curl -L https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 -o /usr/local/bin/jq
-          sudo chmod +x /usr/local/bin/jq
-          jq --version # Verify installation
-
       - name: Fetch and send 3 random free multiplayer games
         shell: bash
         run: |
@@ -38,12 +30,15 @@ jobs:
             exit 1
           fi
 
-          # Shuffle the list and select the first 3 games.
-          # The -c flag outputs each game object on a new line.
-          selected_games=$(echo "$multiplayer_games" | jq -c 'shuffle | .[0:3] | .[]')
-
-          # Loop through each of the 3 selected games
-          for game in $selected_games; do
+          # Alternative shuffle method using bash and shuf command
+          # First, create an array of indices
+          indices=$(seq 0 $((game_count - 1)) | shuf | head -3)
+          
+          # Loop through each of the 3 selected indices
+          for index in $indices; do
+            # Extract the game at the current index
+            game=$(echo "$multiplayer_games" | jq -c ".[$index]")
+            
             # Extract details for the current game
             game_title=$(echo "$game" | jq -r '.title')
             game_description=$(echo "$game" | jq -r '.short_description')
