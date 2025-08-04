@@ -29,17 +29,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          # --- Step 1: Find the total number of pages for the specified book ---
-          echo "Fetching total page count for book: ${BOOK_SLUG}..."
+          # --- Step 1: Fetch pagination info and CALCULATE the correct last page ---
+          echo "Fetching pagination info for book: ${BOOK_SLUG}..."
           initial_response=$(curl -s "https://hadithapi.com/api/hadiths?apiKey=${HADITH_API_KEY}&book=${BOOK_SLUG}&paginate=1")
-          last_page=$(echo "$initial_response" | jq -r '.hadiths.last_page')
+          
+          # Get total items and items per page from the API response
+          total_hadiths=$(echo "$initial_response" | jq -r '.hadiths.total')
+          per_page=$(echo "$initial_response" | jq -r '.hadiths.per_page')
 
-          if [[ -z "$last_page" || "$last_page" == "null" || "$last_page" -lt 1 ]]; then
-            echo "Error: Could not determine the last page. The book slug might be invalid or the book might be empty. API response:"
+          # Check if the fetched values are valid numbers
+          if ! [[ "$total_hadiths" =~ ^[0-9]+$ && "$per_page" =~ ^[0-9]+$ && "$per_page" -gt 0 ]]; then
+            echo "Error: Could not determine total hadiths or per_page count. API response:"
             echo "$initial_response"
             exit 1
           fi
-          echo "Total pages found: $last_page"
+
+          # Manually calculate the correct last page number (ceiling division)
+          # This works around the API bug where it reports the wrong last_page.
+          last_page=$(( (total_hadiths + per_page - 1) / per_page ))
+          echo "Total Hadiths: ${total_hadiths}. Per Page: ${per_page}. Calculated Pages: ${last_page}."
+
 
           # --- Step 2: Find a non-empty page and select a random hadith ---
           hadith_json=""
