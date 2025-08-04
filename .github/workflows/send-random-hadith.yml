@@ -8,6 +8,7 @@ on:
 
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+  HADITH_API_KEY: ${{ secrets.HADITH_API_KEY }} # Your new API key secret
 
 jobs:
   send-hadith:
@@ -19,64 +20,90 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Fetch Hadith, build embed and send
+      - name: Fetch Random Hadith, build embed and send
         shell: bash
         run: |
           set -euo pipefail
 
-          # Fetch a single random hadith from the API
-          hadith_json=$(curl -s "https://sunnah.com/api/hadiths/random")
+          # --- Step 1: Find the total number of pages ---
+          # Make a lightweight call to get pagination info
+          echo "Fetching total page count..."
+          initial_response=$(curl -s "https://hadithapi.com/api/hadiths?apiKey=${HADITH_API_KEY}&paginate=1")
+          last_page=$(echo "$initial_response" | jq -r '.hadiths.last_page')
 
-          # --- Parse JSON for Arabic & English details ---
-          # Note: The API returns an array for 'hadith'. [0] is Arabic, [1] is English.
-          hadith_ar_text=$(echo "$hadith_json" | jq -r '.hadith[0].body')
-          hadith_en_text=$(echo "$hadith_json" | jq -r '.hadith[1].body')
+          if [[ -z "$last_page" || "$last_page" == "null" ]]; then
+            echo "Error: Could not determine the last page. API response:"
+            echo "$initial_response"
+            exit 1
+          fi
+          echo "Total pages found: $last_page"
 
-          collection_slug=$(echo "$hadith_json"| jq -r '.collection')
-          collection_ar=$(echo "$hadith_json" | jq -r '.collectionInfo.arabic_title')
-          collection_en=$(echo "$hadith_json" | jq -r '.collectionInfo.english_title')
+          # --- Step 2: Pick a random page and fetch its data ---
+          random_page=$(( (RANDOM % last_page) + 1 ))
+          echo "Fetching a random hadith from page: $random_page"
+          page_response=$(curl -s "https://hadithapi.com/api/hadiths?apiKey=${HADITH_API_KEY}&page=${random_page}")
 
-          book_num=$(echo "$hadith_json" | jq -r '.hadith[0].bookNumber')
-          hadith_num=$(echo "$hadith_json" | jq -r '.hadith[0].hadithNumber')
+          # --- Step 3: Pick a random hadith from the page's results ---
+          # Get the number of hadiths on the current page (usually 25)
+          hadith_count=$(echo "$page_response" | jq -r '.hadiths.data | length')
+          random_index=$(( RANDOM % hadith_count ))
+          echo "Picking hadith at index $random_index from the page."
+          
+          # Select the single random hadith object
+          hadith_json=$(echo "$page_response" | jq -c ".hadiths.data[$random_index]")
 
-          chapter_title_ar=$(echo "$hadith_json" | jq -r '.hadith[0].chapterTitle')
-          chapter_title_en=$(echo "$hadith_json" | jq -r '.hadith[1].chapterTitle')
+          # --- Step 4: Parse all details from the selected hadith ---
+          book_name=$(echo "$hadith_json" | jq -r '.book.bookName')
+          hadith_num=$(echo "$hadith_json"| jq -r '.hadithNumber')
+          
+          chapter_en=$(echo "$hadith_json" | jq -r '.chapter.chapterEnglish')
+          chapter_ur=$(echo "$hadith_json" | jq -r '.chapter.chapterUrdu')
+          chapter_ar=$(echo "$hadith_json" | jq -r '.chapter.chapterArabic')
 
-          # Construct a direct link to the hadith on sunnah.com
-          hadith_url="https://sunnah.com/${collection_slug}/${hadith_num}"
+          narrator_en=$(echo "$hadith_json" | jq -r '.englishNarrator')
+          hadith_en=$(echo "$hadith_json" | jq -r '.hadithEnglish')
+          hadith_ur=$(echo "$hadith_json" | jq -r '.hadithUrdu')
+          hadith_ar=$(echo "$hadith_json" | jq -r '.hadithArabic')
+          
+          grade=$(echo "$hadith_json" | jq -r '.status')
 
-          # --- Parse Grading Information ---
-          # Uses jq's "alternative operator" `//` to prevent errors if grades are missing.
-          grade_ar_name=$(echo "$hadith_json" | jq -r '.hadith[0].grades[0].graded_by // "غير محدد"')
-          grade_ar_grade=$(echo "$hadith_json"| jq -r '.hadith[0].grades[0].grade // "N/A"')
-          grade_en=$(echo "$hadith_json" | jq -r '.hadith[1].grades[0].grade // "Not Available"')
-
-          # --- Build and Send Arabic Embed ---
-          arabic_payload=$(jq -n \
-            --arg hadith_ar "$hadith_ar_text" \
-            --arg chapter_ar "$chapter_title_ar" \
-            --arg collection_ar "$collection_ar" \
-            --arg book_num "$book_num" \
+          # --- Step 5: Build a single, multi-language embed and send ---
+          # This version combines all languages into one neat embed
+          payload=$(jq -n \
+            --arg book_name "$book_name" \
             --arg hadith_num "$hadith_num" \
-            --arg grade_name "$grade_ar_name" \
-            --arg grade_val "$grade_ar_grade" \
-            --arg url "$hadith_url" \
+            --arg grade "$grade" \
+            --arg narrator_en "$narrator_en" \
+            --arg hadith_en "$hadith_en" \
+            --arg hadith_ur "$hadith_ur" \
+            --arg hadith_ar "$hadith_ar" \
+            --arg chapter_en "$chapter_en" \
+            --arg chapter_ur "$chapter_ur" \
+            --arg chapter_ar "$chapter_ar" \
             '{
               "embeds": [
                 {
-                  "title": ($collection_ar + " - الحديث رقم " + $hadith_num),
-                  "url": $url,
-                  "description": ("**الباب**: " + $chapter_ar + "\n\n" + $hadith_ar),
+                  "title": ($book_name + " - Hadith " + $hadith_num),
                   "color": 3066993,
+                  "author": {
+                    "name": ("Grade: " + $grade)
+                  },
                   "fields": [
                     {
-                      "name": "الدرجة",
-                      "value": ($grade_name + ": **" + $grade_val + "**"),
-                      "inline": true
+                      "name": "English (Narrated by " + $narrator_en + ")",
+                      "value": $hadith_en
+                    },
+                    {
+                      "name": "اردو",
+                      "value": $hadith_ur
+                    },
+                    {
+                      "name": "عربي",
+                      "value": $hadith_ar
                     }
                   ],
                   "footer": {
-                    "text": ("الكتاب " + $book_num)
+                    "text": ("Chapter (EN): " + $chapter_en + "\n" + "الباب (AR): " + $chapter_ar)
                   }
                 }
               ]
@@ -84,38 +111,4 @@ jobs:
 
           curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
                -H "Content-Type: application/json" \
-               -d "$arabic_payload"
-
-          # --- Build and Send English Embed (as a separate message) ---
-          english_payload=$(jq -n \
-            --arg hadith_en "$hadith_en_text" \
-            --arg chapter_en "$chapter_title_en" \
-            --arg collection_en "$collection_en" \
-            --arg book_num "$book_num" \
-            --arg hadith_num "$hadith_num" \
-            --arg grade "$grade_en" \
-            --arg url "$hadith_url" \
-            '{
-              "embeds": [
-                {
-                  "title": ($collection_en + " - Hadith " + $hadith_num),
-                  "url": $url,
-                  "description": ("**Chapter**: " + $chapter_en + "\n\n" + $hadith_en),
-                  "color": 5814783,
-                  "fields": [
-                    {
-                      "name": "Grade",
-                      "value": "**" + $grade + "**",
-                      "inline": true
-                    }
-                  ],
-                  "footer": {
-                    "text": ("Book " + $book_num)
-                  }
-                }
-              ]
-            }')
-
-          curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -H "Content-Type: application/json" \
-               -d "$english_payload"
+               -d "$payload"
