@@ -26,67 +26,67 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Pick a random starting verse and get 5-7 consecutive verses from same surah
-          start_verse_number=$(( RANDOM % 6236 + 1 ))
-          num_verses=$(( RANDOM % 3 + 5 ))  # Random between 5-7 verses
+          # Pick a random surah and starting ayah
+          random_surah=$(( RANDOM % 114 + 1 ))  # 1-114 surahs
           
-          # Get info about the starting verse to determine surah boundaries
-          start_verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${start_verse_number}/ar.alafasy")
-          start_surah_number=$(echo "$start_verse_json" | jq -r '.data.surah.number')
-          start_ayah_in_surah=$(echo "$start_verse_json" | jq -r '.data.numberInSurah')
-          
-          # Get surah info to check total verses in this surah
-          surah_info_json=$(curl -s "https://api.alquran.cloud/v1/surah/${start_surah_number}")
+          # Get surah info to check total verses
+          surah_info_json=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}")
           total_ayahs_in_surah=$(echo "$surah_info_json" | jq -r '.data.numberOfAyahs')
+          surah_name_ar=$(echo "$surah_info_json" | jq -r '.data.name')
+          surah_name_en=$(echo "$surah_info_json" | jq -r '.data.englishName')
           
-          # Adjust num_verses if we would go beyond the surah
-          max_possible_verses=$(( total_ayahs_in_surah - start_ayah_in_surah + 1 ))
-          if [ $num_verses -gt $max_possible_verses ]; then
-            num_verses=$max_possible_verses
+          # Pick a random starting ayah, ensuring we have room for 3-5 verses
+          num_verses=$(( RANDOM % 3 + 3 ))  # Random between 3-5 verses (shorter for Discord limits)
+          max_start_ayah=$(( total_ayahs_in_surah - num_verses + 1 ))
+          if [ $max_start_ayah -lt 1 ]; then
+            max_start_ayah=1
+            num_verses=$total_ayahs_in_surah
           fi
+          start_ayah=$(( RANDOM % max_start_ayah + 1 ))
+          
+          echo "Selected Surah $random_surah ($surah_name_en), ayahs $start_ayah to $(( start_ayah + num_verses - 1 ))"
           
           verses_content=""
           arabic_audio_files=()
           arabic_image_files=()
           
           for i in $(seq 0 $(( num_verses - 1 ))); do
-            current_ayah=$(( start_ayah_in_surah + i ))
+            current_ayah=$(( start_ayah + i ))
             
-            # Get the verse by surah and ayah numbers instead of global verse number
-            verse_json=$(curl -s "https://api.alquran.cloud/v1/surah/${start_surah_number}/${current_ayah}")
-            verse_number=$(echo "$verse_json" | jq -r '.data.number')  # Global verse number for other APIs
-
+            echo "Fetching Surah $random_surah, Ayah $current_ayah..."
+            
             # Get Arabic verse with audio
-            arabic_verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
+            arabic_verse_json=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}/${current_ayah}")
+            verse_number=$(echo "$arabic_verse_json" | jq -r '.data.number')  # Global verse number for other APIs
+            
+            # Get tafseer and English translation using global verse number
             tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.muyassar")
             english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/en.asad")
+            audio_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${verse_number}/ar.alafasy")
 
             verse_text=$(echo "$arabic_verse_json" | jq -r '.data.text')
-            surah_name_ar=$(echo "$arabic_verse_json" | jq -r '.data.surah.name')
-            surah_number=$(echo "$arabic_verse_json" | jq -r '.data.surah.number')
-            ayah_in_surah=$(echo "$arabic_verse_json" | jq -r '.data.numberInSurah')
-            audio_url=$(echo "$arabic_verse_json" | jq -r '.data.audio')
-
+            audio_url=$(echo "$audio_json" | jq -r '.data.audio')
+            
             tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
             english_text=$(echo "$english_json" | jq -r '.data.text')
-            surah_name_en=$(echo "$english_json"| jq -r '.data.surah.englishName')
 
-            english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${surah_number}/${ayah_in_surah}.json")
+            # Get English tafseer (using surah and ayah numbers)
+            english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${random_surah}/${current_ayah}.json")
             english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
 
-            # Add verse content to collection
+            # Add verse content to collection (shortened for Discord limits)
             verse_display_num=$(( i + 1 ))
             if [ $i -eq 0 ]; then
-              verses_content="**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n*${surah_name_ar}، الآية ${current_ayah}*\n\n**التفسير الميسر:** ${tafseer_text}\n\n**English Translation:** ${english_text}\n\n**Commentary:** ${english_tafseer_text}"
+              verses_content="**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**التفسير:** ${tafseer_text}\n**English:** ${english_text}"
             else
-              verses_content="${verses_content}\n\n─────────────────────\n\n**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n*${surah_name_ar}، الآية ${current_ayah}*\n\n**التفسير الميسر:** ${tafseer_text}\n\n**English Translation:** ${english_text}\n\n**Commentary:** ${english_tafseer_text}"
+              verses_content="${verses_content}\n\n**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**التفسير:** ${tafseer_text}\n**English:** ${english_text}"
             fi
 
-            # Download image and audio for first verse only (to avoid too many attachments)
+            # Download image and audio for first verse only
             if [ $i -eq 0 ]; then
-              img_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_number}_${current_ayah}.png"
-              img_raw="ayah_${surah_number}_${current_ayah}.png"
-              img_white="ayah_${surah_number}_${current_ayah}_white.png"
+              img_url="https://cdn.islamic.network/quran/images/high-resolution/${random_surah}_${current_ayah}.png"
+              img_raw="ayah_${random_surah}_${current_ayah}.png"
+              img_white="ayah_${random_surah}_${current_ayah}_white.png"
 
               curl -s -o "$img_raw" "$img_url"
               convert "$img_raw" -background white -alpha remove -alpha off "$img_white"
@@ -103,8 +103,8 @@ jobs:
           done
 
           # Get surah name for the title
-          surah_name_ar=$(echo "$start_verse_json" | jq -r '.data.surah.name')
-          surah_name_en=$(echo "$start_verse_json" | jq -r '.data.surah.englishName')
+          surah_name_ar=$(echo "$surah_info_json" | jq -r '.data.name')
+          surah_name_en=$(echo "$surah_info_json" | jq -r '.data.englishName')
 
           # Determine time of day for title
           current_hour=$(date -u +%H)
@@ -120,8 +120,8 @@ jobs:
             --arg title "$time_greeting" \
             --arg surah_ar "$surah_name_ar" \
             --arg surah_en "$surah_name_en" \
-            --arg start_ayah "$start_ayah_in_surah" \
-            --arg end_ayah "$(( start_ayah_in_surah + num_verses - 1 ))" \
+            --arg start_ayah "$start_ayah" \
+            --arg end_ayah "$(( start_ayah + num_verses - 1 ))" \
             --arg count "$num_verses" \
             '{
               embeds: [
@@ -137,6 +137,8 @@ jobs:
                 }
               ]
             }')
+
+          echo "Payload size: $(echo "$payload" | wc -c) characters"
 
           # Send the comprehensive message with attachments from first verse
           if [ ${#arabic_audio_files[@]} -gt 0 ] && [ ${#arabic_image_files[@]} -gt 0 ]; then
