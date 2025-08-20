@@ -35,7 +35,8 @@ jobs:
           surah_name_en=$(echo "$surah_info_json" | jq -r '.data.englishName')
           
           # Pick a random starting ayah, ensuring we have room for 3-5 verses
-          num_verses=$(( RANDOM % 3 + 3 ))  # Random between 3-5 verses (shorter for Discord limits)
+          # Reduce number of verses if payload is still too large
+          num_verses=$(( RANDOM % 2 + 2 ))  # Random between 2-3 verses only
           max_start_ayah=$(( total_ayahs_in_surah - num_verses + 1 ))
           if [ $max_start_ayah -lt 1 ]; then
             max_start_ayah=1
@@ -49,44 +50,45 @@ jobs:
           arabic_audio_files=()
           arabic_image_files=()
           
+          # Get the entire surah first to access consecutive ayahs
+          echo "Fetching complete surah data..."
+          arabic_surah=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}/ar.alafasy")
+          tafseer_surah=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}/ar.muyassar") 
+          english_surah=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}/en.asad")
+          
           for i in $(seq 0 $(( num_verses - 1 ))); do
             current_ayah=$(( start_ayah + i ))
+            ayah_index=$(( current_ayah - 1 ))  # Array is 0-indexed
             
-            echo "Fetching Surah $random_surah, Ayah $current_ayah..."
+            echo "Processing Surah $random_surah, Ayah $current_ayah (index $ayah_index)..."
             
-            # Get all data using global verse number approach
-            # First get the global verse number for this surah:ayah
-            surah_data=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}")
-            
-            # Calculate global verse number
-            if [ $i -eq 0 ]; then
-              # Get the first ayah's global number
-              first_ayah_global=$(echo "$surah_data" | jq -r ".data.ayahs[$(( current_ayah - 1 ))].number")
-              global_verse_start=$first_ayah_global
-            fi
-            global_verse_number=$(( global_verse_start + i ))
-            
-            echo "Global verse number: $global_verse_number"
-            
-            # Get Arabic verse, tafseer, and English using global verse number
-            arabic_verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${global_verse_number}/ar.alafasy")
-            tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${global_verse_number}/ar.muyassar")
-            english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${global_verse_number}/en.asad")
-
-            verse_text=$(echo "$arabic_verse_json" | jq -r '.data.text')
-            tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
-            english_text=$(echo "$english_json" | jq -r '.data.text')
-            audio_url=$(echo "$arabic_verse_json" | jq -r '.data.audio')
+            # Extract ayah data from surah arrays
+            verse_text=$(echo "$arabic_surah" | jq -r ".data.ayahs[$ayah_index].text")
+            tafseer_text=$(echo "$tafseer_surah" | jq -r ".data.ayahs[$ayah_index].text")
+            english_text=$(echo "$english_surah" | jq -r ".data.ayahs[$ayah_index].text")
+            audio_url=$(echo "$arabic_surah" | jq -r ".data.ayahs[$ayah_index].audio")
 
             echo "Verse text: ${verse_text:0:50}..."
             echo "Tafseer: ${tafseer_text:0:50}..."
 
-            # Add verse content to collection (shortened for Discord limits)
+            # Add verse content to collection (shortened format)
             verse_display_num=$(( i + 1 ))
+            
+            # Truncate long texts to fit Discord limits
+            short_tafseer=$(echo "$tafseer_text" | cut -c1-200)
+            short_english=$(echo "$english_text" | cut -c1-200)
+            
+            if [ ${#tafseer_text} -gt 200 ]; then
+              short_tafseer="${short_tafseer}..."
+            fi
+            if [ ${#english_text} -gt 200 ]; then
+              short_english="${short_english}..."
+            fi
+            
             if [ $i -eq 0 ]; then
-              verses_content="**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**التفسير:** ${tafseer_text}\n**English:** ${english_text}"
+              verses_content="**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**تفسير:** ${short_tafseer}\n**English:** ${short_english}"
             else
-              verses_content="${verses_content}\n\n**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**التفسير:** ${tafseer_text}\n**English:** ${english_text}"
+              verses_content="${verses_content}\n\n**${verse_display_num}.** ﴿ **${verse_text}** ﴾\n**تفسير:** ${short_tafseer}\n**English:** ${short_english}"
             fi
 
             # Download image and audio for first verse only
@@ -102,9 +104,6 @@ jobs:
               curl -s -o "$audio_file" "$audio_url"
               arabic_audio_files+=("$audio_file")
             fi
-
-            # Small delay to avoid overwhelming the API
-            sleep 1
           done
 
           # Get surah name for the title
@@ -142,6 +141,51 @@ jobs:
             }')
 
           echo "Payload size: $(echo "$payload" | wc -c) characters"
+          
+          # If payload is still too large, send a simpler version
+          payload_size=$(echo "$payload" | wc -c)
+          if [ $payload_size -gt 4000 ]; then
+            echo "Payload too large ($payload_size chars), creating simplified version..."
+            
+            # Create ultra-simple version with just Arabic and basic info
+            simple_content=""
+            for i in $(seq 0 $(( num_verses - 1 ))); do
+              current_ayah=$(( start_ayah + i ))
+              ayah_index=$(( current_ayah - 1 ))
+              
+              verse_text=$(echo "$arabic_surah" | jq -r ".data.ayahs[$ayah_index].text")
+              verse_display_num=$(( i + 1 ))
+              
+              if [ $i -eq 0 ]; then
+                simple_content="**${verse_display_num}.** ﴿ ${verse_text} ﴾"
+              else
+                simple_content="${simple_content}\n\n**${verse_display_num}.** ﴿ ${verse_text} ﴾"
+              fi
+            done
+            
+            payload=$(jq -n \
+              --arg content "$simple_content" \
+              --arg title "$time_greeting" \
+              --arg surah_ar "$surah_name_ar" \
+              --arg surah_en "$surah_name_en" \
+              --arg start_ayah "$start_ayah" \
+              --arg end_ayah "$(( start_ayah + num_verses - 1 ))" \
+              '{
+                embeds: [
+                  {
+                    title: $title,
+                    description: $content,
+                    color: 36864,
+                    footer: {
+                      text: ($surah_ar + " (" + $surah_en + ") - Verses " + $start_ayah + "-" + $end_ayah)
+                    },
+                    timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+                  }
+                ]
+              }')
+              
+            echo "Simplified payload size: $(echo "$payload" | wc -c) characters"
+          fi
 
           # Send the comprehensive message with attachments from first verse
           if [ ${#arabic_audio_files[@]} -gt 0 ] && [ ${#arabic_image_files[@]} -gt 0 ]; then
