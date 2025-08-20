@@ -1,204 +1,190 @@
-name: Daily Quran Verses
-on:
-  schedule:
-    - cron: '0 6 * * *'    # 6 AM UTC (morning)
-    - cron: '0 18 * * *'   # 6 PM UTC (evening)
-  workflow_dispatch:
+set -euo pipefail
+  
+# Get random surah (1-114)
+random_surah=$(( RANDOM % 114 + 1 ))
 
-env:
-  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+# Get surah info to determine how many verses it has
+surah_info=$(curl -s "[https://api.alquran.cloud/v1/surah/$](https://api.alquran.cloud/v1/surah/$){random_surah}")
+total_verses=$(echo "$surah_info" | jq -r '.data.numberOfAyahs')
 
-jobs:
-  send-verses:
-    runs-on: ubuntu-latest
+# Determine how many verses to fetch (3-7 verses, but not more than available)
+min_verses=3
+max_verses=7
+verses_to_fetch=$(( RANDOM % (max_verses - min_verses + 1) + min_verses ))
+if [ "$verses_to_fetch" -gt "$total_verses" ]; then
+  verses_to_fetch=$total_verses
+fi
 
-    steps:
-      - name: Install ImageMagick & jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick jq
+# Pick random starting verse (ensuring we don't go beyond surah length)
+max_start_verse=$(( total_verses - verses_to_fetch + 1 ))
+if [ "$max_start_verse" -lt 1 ]; then
+  max_start_verse=1
+fi
+start_verse=$(( RANDOM % max_start_verse + 1 ))
 
-      - name: Fetch verses, build embed and send
-        shell: bash
-        run: |
-          set -euo pipefail
+echo "Fetching $verses_to_fetch verses from Surah $random_surah, starting from verse $start_verse"
 
-          # Get random surah (1-114)
-          random_surah=$(( RANDOM % 114 + 1 ))
-          
-          # Get surah info to determine how many verses it has
-          surah_info=$(curl -s "https://api.alquran.cloud/v1/surah/${random_surah}")
-          total_verses=$(echo "$surah_info" | jq -r '.data.numberOfAyahs')
-          
-          # Determine how many verses to fetch (3-7 verses, but not more than available)
-          min_verses=3
-          max_verses=7
-          verses_to_fetch=$(( RANDOM % (max_verses - min_verses + 1) + min_verses ))
-          if [ "$verses_to_fetch" -gt "$total_verses" ]; then
-            verses_to_fetch=$total_verses
-          fi
-          
-          # Pick random starting verse (ensuring we don't go beyond surah length)
-          max_start_verse=$(( total_verses - verses_to_fetch + 1 ))
-          if [ "$max_start_verse" -lt 1 ]; then
-            max_start_verse=1
-          fi
-          start_verse=$(( RANDOM % max_start_verse + 1 ))
-          
-          echo "Fetching $verses_to_fetch verses from Surah $random_surah, starting from verse $start_verse"
-          
-          # Initialize variables for combined content
-          combined_arabic=""
-          combined_english=""
-          combined_tafseer_ar=""
-          combined_tafseer_en=""
-          audio_files=()
-          image_files=()
-          
-          # Fetch each verse in the range
-          for (( i=0; i<verses_to_fetch; i++ )); do
-            current_verse=$(( start_verse + i ))
-            
-            # Calculate absolute verse number for API calls
-            if [ "$random_surah" -eq 1 ]; then
-              absolute_verse=$current_verse
-            else
-              # Get cumulative verses up to previous surah
-              prev_surah=$(( random_surah - 1 ))
-              cumulative=$(curl -s "https://api.alquran.cloud/v1/surah" | jq -r ".data[:${prev_surah}] | map(.numberOfAyahs) | add")
-              absolute_verse=$(( cumulative + current_verse ))
-            fi
-            
-            echo "Processing verse $current_verse of surah $random_surah (absolute: $absolute_verse)"
-            
-            # Fetch verse data
-            verse_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${absolute_verse}/ar.alafasy")
-            tafseer_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${absolute_verse}/ar.muyassar")
-            english_json=$(curl -s "https://api.alquran.cloud/v1/ayah/${absolute_verse}/en.asad")
-            
-            verse_text=$(echo "$verse_json" | jq -r '.data.text')
-            audio_url=$(echo "$verse_json" | jq -r '.data.audio')
-            tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
-            english_text=$(echo "$english_json" | jq -r '.data.text')
-            
-            # Get English tafseer
-            english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${random_surah}/${current_verse}.json")
-            english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
-            
-            # Combine content
-            if [ $i -eq 0 ]; then
-              # Get surah names from first verse
-              surah_name_ar=$(echo "$verse_json" | jq -r '.data.surah.name')
-              surah_name_en=$(echo "$english_json" | jq -r '.data.surah.englishName')
-              
-              combined_arabic="﴿ ${verse_text} ﴾ (${current_verse})"
-              combined_english="${english_text} (${current_verse})"
-              combined_tafseer_ar="${tafseer_text}"
-              combined_tafseer_en="${english_tafseer_text}"
-            else
-              combined_arabic="${combined_arabic}\n\n﴿ ${verse_text} ﴾ (${current_verse})"
-              combined_english="${combined_english}\n\n${english_text} (${current_verse})"
-              combined_tafseer_ar="${combined_tafseer_ar}\n\n${tafseer_text}"
-              combined_tafseer_en="${combined_tafseer_en}\n\n${english_tafseer_text}"
-            fi
-            
-            # Download and process image
-            img_url="https://cdn.islamic.network/quran/images/high-resolution/${random_surah}_${current_verse}.png"
-            img_raw="ayah${random_surah}_${current_verse}.png"
-            img_white="ayah${random_surah}_${current_verse}_white.png"
-            
-            curl -s -o "$img_raw" "$img_url"
-            convert "$img_raw" -background white -alpha remove -alpha off "$img_white"
-            image_files+=("$img_white")
-            
-            # Download audio
-            safe_surah=$(echo "$surah_name_ar" | tr ' ' '_')
-            audio_file="${safe_surah}_${current_verse}.mp3"
-            curl -s -o "$audio_file" "$audio_url"
-            audio_files+=("$audio_file")
-          done
-          
-          # Create verse range text
-          if [ "$verses_to_fetch" -eq 1 ]; then
-            verse_range="الآية ${start_verse}"
-            verse_range_en="Verse ${start_verse}"
-          else
-            end_verse=$(( start_verse + verses_to_fetch - 1 ))
-            verse_range="الآيات ${start_verse}-${end_verse}"
-            verse_range_en="Verses ${start_verse}-${end_verse}"
-          fi
-          
-          # Get the filename of the first image to be attached
-          image_to_attach="${image_files[0]}"
-          
-          # Send Arabic version with audio and images
-          arabic_payload=$(jq -n \
-            --arg verses "$combined_arabic" \
-            --arg tafseer "$combined_tafseer_ar" \
-            --arg surahA "$surah_name_ar" \
-            --arg range "$verse_range" \
-            --arg image_filename "$image_to_attach" \
-            '{
-              embeds: [
-                {
-                  description: ($verses + "\n\nالتفسير الميسر\n" + $tafseer),
-                  color: 36864,
-                  footer: {
-                    text: ($surahA + "، " + $range)
-                  },
-                  image: {
-                    url: ("attachment://" + $image_filename)
-                  }
-                }
-              ]
-            }')
-          
-          # Build curl command for Arabic version with files
-          curl_cmd="curl --fail -X POST \"$DISCORD_WEBHOOK_URL\" -F \"payload_json=$arabic_payload\""
-          
-          # Add audio files (limit to 5 to avoid Discord limits)
-          audio_count=0
-          for audio_file in "${audio_files[@]}"; do
-            if [ $audio_count -lt 5 ]; then
-              curl_cmd="$curl_cmd -F \"file$((audio_count+1))=@${audio_file}\""
-              ((audio_count++))
-            fi
-          done
-          
-          # Add the image file, making sure its field name index doesn't conflict
-          if [ ${#image_files[@]} -gt 0 ]; then
-            curl_cmd="$curl_cmd -F \"file$((audio_count+1))=@${image_to_attach}\""
-          fi
-          
-          # Execute the curl command
-          eval $curl_cmd
-          
-          # Send English version
-          english_payload=$(jq -n \
-            --arg eng "$combined_english" \
-            --arg eng_tafseer "$combined_tafseer_en" \
-            --arg surahE "$surah_name_en" \
-            --arg range "$verse_range_en" \
-            '{
-              embeds: [
-                {
-                  description: ($eng + "\n\nCommentary (Al-Jalalayn)\n" + $eng_tafseer),
-                  color: 36864,
-                  footer: {
-                    text: ($surahE + ", " + $range)
-                  }
-                }
-              ]
-            }')
-          
-          curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
-               -H "Content-Type: application/json" \
-               -d "$english_payload"
-          
-          # Cleanup
-          for file in "${audio_files[@]}" "${image_files[@]}"; do
-            rm -f "$file"
-          done
-          for img in ayah${random_surah}_*.png; do
-            [ -f "$img" ] && rm -f "$img"
-          done
+# Initialize variables for combined content
+combined_arabic=""
+combined_english=""
+combined_tafseer_ar=""
+combined_tafseer_en=""
+audio_files=()
+image_files=()
+
+# Fetch each verse in the range
+for (( i=0; i<verses_to_fetch; i++ )); do
+  current_verse=$(( start_verse + i ))
+  
+  # Calculate absolute verse number for API calls
+  if [ "$random_surah" -eq 1 ]; then
+    absolute_verse=$current_verse
+  else
+    # Get cumulative verses up to previous surah
+    prev_surah=$(( random_surah - 1 ))
+    cumulative=$(curl -s "[https://api.alquran.cloud/v1/surah](https://api.alquran.cloud/v1/surah)" | jq -r ".data[:${prev_surah}] | map(.numberOfAyahs) | add")
+    absolute_verse=$(( cumulative + current_verse ))
+  fi
+  
+  echo "Processing verse $current_verse of surah $random_surah (absolute: $absolute_verse)"
+  
+  # Fetch verse data
+  verse_json=$(curl -s "[https://api.alquran.cloud/v1/ayah/$](https://api.alquran.cloud/v1/ayah/$){absolute_verse}/ar.alafasy")
+  tafseer_json=$(curl -s "[https://api.alquran.cloud/v1/ayah/$](https://api.alquran.cloud/v1/ayah/$){absolute_verse}/ar.muyassar")
+  english_json=$(curl -s "[https://api.alquran.cloud/v1/ayah/$](https://api.alquran.cloud/v1/ayah/$){absolute_verse}/en.asad")
+  
+  verse_text=$(echo "$verse_json" | jq -r '.data.text')
+  audio_url=$(echo "$verse_json" | jq -r '.data.audio')
+  tafseer_text=$(echo "$tafseer_json" | jq -r '.data.text')
+  english_text=$(echo "$english_json" | jq -r '.data.text')
+  
+  # Get English tafseer
+  english_tafseer_json=$(curl -s "[https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/$](https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/$){random_surah}/${current_verse}.json")
+  english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
+  
+  # Combine content
+  if [ $i -eq 0 ]; then
+    # Get surah names from first verse
+    surah_name_ar=$(echo "$verse_json" | jq -r '.data.surah.name')
+    surah_name_en=$(echo "$english_json" | jq -r '.data.surah.englishName')
+    
+    combined_arabic="﴿ ${verse_text} ﴾ (${current_verse})"
+    combined_english="${english_text} (${current_verse})"
+    combined_tafseer_ar="${tafseer_text}"
+    combined_tafseer_en="${english_tafseer_text}"
+  else
+    combined_arabic="${combined_arabic}\n\n﴿ ${verse_text} ﴾ (${current_verse})"
+    combined_english="${combined_english}\n\n${english_text} (${current_verse})"
+    combined_tafseer_ar="${combined_tafseer_ar}\n\n${tafseer_text}"
+    combined_tafseer_en="${combined_tafseer_en}\n\n${english_tafseer_text}"
+  fi
+  
+  # Download and process image
+  img_url="[https://cdn.islamic.network/quran/images/high-resolution/$](https://cdn.islamic.network/quran/images/high-resolution/$){random_surah}_${current_verse}.png"
+  img_raw="ayah${random_surah}_${current_verse}.png"
+  img_white="ayah${random_surah}_${current_verse}_white.png"
+  
+  curl -s -o "$img_raw" "$img_url"
+  convert "$img_raw" -background white -alpha remove -alpha off "$img_white"
+  image_files+=("$img_white")
+  
+  # Download audio
+  safe_surah=$(echo "$surah_name_ar" | tr ' ' '_')
+  audio_file="${safe_surah}_${current_verse}.mp3"
+  curl -s -o "$audio_file" "$audio_url"
+  audio_files+=("$audio_file")
+done
+
+# Create verse range text
+if [ "$verses_to_fetch" -eq 1 ]; then
+  verse_range="الآية ${start_verse}"
+  verse_range_en="Verse ${start_verse}"
+else
+  end_verse=$(( start_verse + verses_to_fetch - 1 ))
+  verse_range="الآيات ${start_verse}-${end_verse}"
+  verse_range_en="Verses ${start_verse}-${end_verse}"
+fi
+
+# Get the filename of the first image to be attached
+image_to_attach="${image_files[0]}"
+
+# Send Arabic version with audio and images
+arabic_payload=$(jq -n \
+  --arg verses "$combined_arabic" \
+  --arg tafseer "$combined_tafseer_ar" \
+  --arg surahA "$surah_name_ar" \
+  --arg range "$verse_range" \
+  --arg image_filename "$image_to_attach" \
+  '{
+    embeds: [
+      {
+        description: ($verses + "\n\nالتفسير الميسر\n" + $tafseer),
+        color: 36864,
+        footer: {
+          text: ($surahA + "، " + $range)
+        },
+        image: {
+          url: ("attachment://" + $image_filename)
+        }
+      }
+    ]
+  }')
+
+# Build the curl command using a bash array to avoid `eval`
+curl_args=(
+    "curl"
+    "--fail"
+    "-X" "POST"
+    "$DISCORD_WEBHOOK_URL"
+    "-F" "payload_json=$arabic_payload"
+)
+
+# Add audio files to the command arguments
+audio_count=0
+for audio_file in "${audio_files[@]}"; do
+  if [ $audio_count -lt 5 ]; then
+    curl_args+=("-F" "file$((audio_count+1))=@${audio_file}")
+    ((audio_count++))
+  fi
+done
+
+# Add the image file to the command arguments
+if [ ${#image_files[@]} -gt 0 ]; then
+  curl_args+=("-F" "file$((audio_count+1))=@${image_to_attach}")
+fi
+
+# Execute the command by safely expanding the array
+"${curl_args[@]}"
+
+# Add a 1-second delay to avoid potential API rate limiting
+sleep 1
+
+# Send English version
+english_payload=$(jq -n \
+  --arg eng "$combined_english" \
+  --arg eng_tafseer "$combined_tafseer_en" \
+  --arg surahE "$surah_name_en" \
+  --arg range "$verse_range_en" \
+  '{
+    embeds: [
+      {
+        description: ($eng + "\n\nCommentary (Al-Jalalayn)\n" + $eng_tafseer),
+        color: 36864,
+        footer: {
+          text: ($surahE + ", " + $range)
+        }
+      }
+    ]
+  }')
+
+curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
+     -H "Content-Type: application/json" \
+     -d "$english_payload"
+
+# Cleanup
+for file in "${audio_files[@]}" "${image_files[@]}"; do
+  rm -f "$file"
+done
+for img in ayah${random_surah}_*.png; do
+  [ -f "$img" ] && rm -f "$img"
+done
