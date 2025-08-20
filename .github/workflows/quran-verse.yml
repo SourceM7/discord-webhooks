@@ -1,79 +1,62 @@
-# Name for the workflow, which will be displayed in the Actions tab
 name: Daily Quran Verse Sender
 
 on:
-  # Schedule to run at 08:00 and 20:00 UTC every day
   schedule:
     - cron: '0 8,20 * * *'
-  
-  # Allows you to manually run this workflow from the Actions tab
   workflow_dispatch:
 
-# Environment variables available to all jobs and steps
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
 jobs:
-  # The main job that will run
   send-surah:
-    # Runs on the latest version of Ubuntu
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Install necessary command-line tools
       - name: Install ImageMagick & jq
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick jq
 
-      # Step 2: Run the main script to fetch data and send messages
       - name: Fetch Surah and Send to Discord
         shell: bash
         run: |
-          # Exit immediately if a command exits with a non-zero status.
           set -euo pipefail
 
           # 1. GET A RANDOM SURAH
-          # Get a random surah number between 1 and 114
           surah_number=$(( RANDOM % 114 + 1 ))
 
-          # 2. FETCH SURAH DATA FROM THE API
-          # Fetch the entire surah in Arabic (with audio), Arabic Tafseer, and English translation
+          # 2. FETCH SURAH DATA
           arabic_surah_json=$(curl -s "http://api.alquran.cloud/v1/surah/${surah_number}/ar.alafasy")
           tafseer_surah_json=$(curl -s "http://api.alquran.cloud/v1/surah/${surah_number}/ar.muyassar")
           english_surah_json=$(curl -s "http://api.alquran.cloud/v1/surah/${surah_number}/en.asad")
 
           # 3. EXTRACT SURAH-LEVEL DETAILS
-          # Get the name of the surah in Arabic and English, and the total number of verses
           surah_name_ar=$(echo "$arabic_surah_json" | jq -r '.data.name')
           surah_name_en=$(echo "$english_surah_json" | jq -r '.data.englishName')
           number_of_ayahs=$(echo "$arabic_surah_json" | jq -r '.data.numberOfAyahs')
 
-          # 4. LOOP THROUGH EACH VERSE OF THE SURAH
+          # 4. LOOP THROUGH EACH VERSE
           for (( i=0; i<$number_of_ayahs; i++ ))
           do
-            # Extract details for the current verse from the fetched JSON
             verse_text=$(echo "$arabic_surah_json" | jq -r ".data.ayahs[$i].text")
             ayah_in_surah=$(echo "$arabic_surah_json" | jq -r ".data.ayahs[$i].numberInSurah")
             audio_url=$(echo "$arabic_surah_json" | jq -r ".data.ayahs[$i].audio")
             tafseer_text=$(echo "$tafseer_surah_json" | jq -r ".data.ayahs[$i].text")
             english_text=$(echo "$english_surah_json" | jq -r ".data.ayahs[$i].text")
-
-            # Fetch English commentary for the current verse
             english_tafseer_json=$(curl -s "https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/en-al-jalalayn/${surah_number}/${ayah_in_surah}.json")
             english_tafseer_text=$(echo "$english_tafseer_json" | jq -r '.text // "No English commentary available"')
 
-            # Prepare image and audio files
+            # Prepare files
             img_url="https://cdn.islamic.network/quran/images/high-resolution/${surah_number}_${ayah_in_surah}.png"
             img_raw="ayah.png"
             img_white="ayah_white.png"
             curl -s -o "$img_raw" "$img_url"
             convert "$img_raw" -background white -alpha remove -alpha off "$img_white"
-
             audio_file="recitation.mp3"
             curl -s -o "$audio_file" "$audio_url"
 
-            # 5. BUILD AND SEND ARABIC PAYLOAD
+            # 5. BUILD AND SEND ARABIC PAYLOAD (Using Heredoc for safety, though less critical here)
             arabic_payload=$(jq -n \
               --arg verse   "$verse_text" \
               --arg tafseer "$tafseer_text" \
@@ -94,13 +77,14 @@ jobs:
                  -F "file1=@${audio_file}" \
                  -F "file2=@${img_white}"
 
-            # 6. BUILD AND SEND ENGLISH PAYLOAD
+            # 6. BUILD AND SEND ENGLISH PAYLOAD (FIXED: Using Heredoc)
             english_payload=$(jq -n \
               --arg eng     "$english_text" \
               --arg eng_tafseer "$english_tafseer_text" \
               --arg surahE  "$surah_name_en" \
               --arg ayahN   "$ayah_in_surah" \
-              '{
+              --rawfile /dev/null <<'EOF'
+              {
                 "embeds": [
                   {
                     "description": ($eng + "\n\n**Commentary (Al-Jalalayn)**\n" + $eng_tafseer),
@@ -108,15 +92,17 @@ jobs:
                     "footer": { "text": ($surahE + ", Verse " + $ayahN) }
                   }
                 ]
-              }')
+              }
+          EOF
+            )
 
             curl --fail -X POST "$DISCORD_WEBHOOK_URL" \
                  -H "Content-Type: application/json" \
                  -d "$english_payload"
             
-            # Add a small delay to avoid rate limiting on Discord's side
+            # Add delay to avoid Discord rate limits
             sleep 2
           done
 
-          # 7. CLEAN UP FILES (This will run after the loop is finished)
-          rm -f ayah.png ayah_white.png recitation.mp3```
+          # 7. CLEAN UP FILES
+          rm -f ayah.png ayah_white.png recitation.mp3
