@@ -146,25 +146,25 @@ jobs:
               ]
             }')
           
-          # Prepare file attachments for curl
-          file_args=()
-          file_args+=("-F" "payload_json=$arabic_payload")
+          # Build curl command for Arabic version with files
+          curl_cmd="curl --fail -X POST \"$DISCORD_WEBHOOK_URL\" -F \"payload_json=$arabic_payload\""
           
-          # Add audio files
-          for i in "${!audio_files[@]}"; do
-            file_args+=("-F" "file$((i+1))=@${audio_files[$i]}")
-          done
-          
-          # Add image files (limit to avoid Discord limits)
-          img_count=0
-          for img in "${image_files[@]}"; do
-            if [ $img_count -lt 5 ]; then  # Limit images to avoid Discord attachment limits
-              file_args+=("-F" "img$((img_count+1))=@${img}")
-              ((img_count++))
+          # Add audio files (limit to 5 to avoid Discord limits)
+          audio_count=0
+          for audio_file in "${audio_files[@]}"; do
+            if [ $audio_count -lt 5 ]; then
+              curl_cmd="$curl_cmd -F \"file$((audio_count+1))=@${audio_file}\""
+              ((audio_count++))
             fi
           done
           
-          curl --fail -X POST "$DISCORD_WEBHOOK_URL" "${file_args[@]}"
+          # Add one image file (just the first one to avoid Discord limits)
+          if [ ${#image_files[@]} -gt 0 ]; then
+            curl_cmd="$curl_cmd -F \"image=@${image_files[0]}\""
+          fi
+          
+          # Execute the curl command
+          eval $curl_cmd
           
           # Send English version
           english_payload=$(jq -n \
