@@ -11,38 +11,6 @@ def get_moon_phase():
     
     illumination = moon.phase
     
-
-    if illumination >= 96:
-        phase_name = "Full Moon"
-        image_file = "Moon_Phase_1_Alt.png"
-    elif illumination >= 76:
-        phase_name = "Waxing Gibbous"
-        image_file = "Moon_Phase_8_Alt.png"
-    elif illumination >= 51:
-        phase_name = "First Quarter"
-        image_file = "Moon_Phase_7_Alt.png"
-    elif illumination >= 26:
-        phase_name = "Waxing Crescent"
-        image_file = "Moon_Phase_6_Alt.png"
-    elif illumination >= 4:
-        phase_name = "New Moon"
-        image_file = "Moon_Phase_5_Alt.png"
-    elif illumination >= 1:
-        observer = ephem.Observer()
-        observer.date = datetime.utcnow()
-        prev_new = ephem.previous_new_moon(observer.date)
-        next_new = ephem.next_new_moon(observer.date)
-        
-        if abs(observer.date - prev_new) < abs(observer.date - next_new):
-            phase_name = "Waxing Crescent"
-            image_file = "Moon_Phase_6_Alt.png"
-        else:
-            phase_name = "Waning Crescent"
-            image_file = "Moon_Phase_4_Alt.png"
-    else:
-        phase_name = "New Moon"
-        image_file = "Moon_Phase_5_Alt.png"
-    
     observer = ephem.Observer()
     observer.date = datetime.utcnow()
     
@@ -100,15 +68,32 @@ def save_message_id(message_id):
     with open('message_id.txt', 'w') as f:
         f.write(message_id)
 
-def update_discord_message(webhook_url, moon_data, message_id=None):
-    """Update or create Discord message with moon phase"""
+def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
+    """Delete old message and create new Discord message with moon phase"""
     
+    # Delete old message if it exists
+    if message_id:
+        parts = webhook_url.rstrip('/').split('/')
+        webhook_id = parts[-2]
+        webhook_token = parts[-1]
+        
+        delete_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}"
+        
+        delete_response = requests.delete(delete_url)
+        
+        if delete_response.status_code == 204:
+            print("🗑️ Successfully deleted old message!")
+        else:
+            print(f"⚠️ Could not delete old message: {delete_response.status_code}")
+    
+    # Prepare the image
     with open(moon_data['image_file'], 'rb') as f:
         image_data = f.read()
     
+    # Create embed message
     embed = {
         "title": f"🌙 {moon_data['name']}",
-        "color": 0x2C2F33, 
+        "color": 0x2C2F33,
         "fields": [
             {
                 "name": "Illumination",
@@ -143,44 +128,22 @@ def update_discord_message(webhook_url, moon_data, message_id=None):
         'embeds': [embed]
     }
     
-    if message_id:
-
-      
-        parts = webhook_url.rstrip('/').split('/')
-        webhook_id = parts[-2]
-        webhook_token = parts[-1]
-        
-        update_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}/messages/{message_id}"
-        
-        response = requests.patch(
-            update_url,
-            data={'payload_json': json.dumps(payload)},
-            files=files
-        )
-        
-        if response.status_code == 200:
-            print("✅ Successfully updated Discord message!")
-            return message_id
-        else:
-            print(f"⚠️ Failed to update message: {response.status_code}")
-            print(f"Creating new message instead...")
-            return None
-    
+    # Create new message
     response = requests.post(
         webhook_url,
         data={'payload_json': json.dumps(payload)},
         files=files,
-        params={'wait': 'true'}  
+        params={'wait': 'true'}
     )
     
     if response.status_code in [200, 204]:
-        print("✅ Successfully posted to Discord!")
+        print("✅ Successfully posted new message to Discord!")
         try:
             response_data = response.json()
             new_message_id = response_data.get('id')
             if new_message_id:
                 save_message_id(new_message_id)
-                print(f"💾 Saved message ID: {new_message_id}")
+                print(f"💾 Saved new message ID: {new_message_id}")
             return new_message_id
         except:
             print("⚠️ Could not extract message ID")
@@ -202,7 +165,7 @@ if __name__ == "__main__":
     
     message_id = get_message_id()
     
-    new_message_id = update_discord_message(webhook_url, moon_data, message_id)
+    new_message_id = delete_and_post_discord_message(webhook_url, moon_data, message_id)
     
-    if new_message_id and not message_id:
-        print("🆕 First time posting - future runs will update this message")
+    if new_message_id:
+        print("🔄 Message replaced successfully!")
