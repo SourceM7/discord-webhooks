@@ -131,7 +131,7 @@ def update_discord_message(webhook_url, moon_data, message_id=None):
         },
         "timestamp": datetime.utcnow().isoformat(),
         "footer": {
-            "text": "Moon Phase Tracker"
+            "text": "Outlaw on watch duty"
         }
     }
     
