@@ -3,7 +3,7 @@ name: Moon Phase Bot
 on:
   schedule:
     # Runs every day at 12:00 UTC (adjust as needed)
-    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
   
   # Allows manual trigger from Actions tab
   workflow_dispatch:
