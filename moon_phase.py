@@ -31,6 +31,20 @@ def get_fun_fact():
     ]
     return random.choice(facts)
 
+def get_phase_color(phase_name):
+    """Return embed color based on moon phase"""
+    phase_colors = {
+        "New Moon": 0x0a0e27,        # Very dark blue
+        "Waxing Crescent": 0x2d3748,  # Dark gray-blue
+        "First Quarter": 0x4a5568,    # Medium gray
+        "Waxing Gibbous": 0x718096,   # Light gray
+        "Full Moon": 0xf7fafc,        # Bright white/silver
+        "Waning Gibbous": 0x718096,   # Light gray
+        "Last Quarter": 0x4a5568,     # Medium gray
+        "Waning Crescent": 0x2d3748   # Dark gray-blue
+    }
+    return phase_colors.get(phase_name, 0x2C2F33)
+
 def get_photography_tip(phase_name):
     """Return technical photography settings based on moon phase"""
     tips = {
@@ -135,11 +149,12 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
     distance = get_moon_distance()
     fun_fact = get_fun_fact()
     photo_tip = get_photography_tip(moon_data['name'])
+    phase_color = get_phase_color(moon_data['name'])
     
     # Create embed message
     embed = {
         "title": f"🌙 {moon_data['name']}",
-        "color": 0x2C2F33,
+        "color": phase_color,
         "fields": [
             {
                 "name": "Illumination",
