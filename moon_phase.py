@@ -3,6 +3,47 @@ import requests
 import os
 import json
 from datetime import datetime
+import random
+
+def get_moon_distance():
+    """Calculate current distance to the moon in km"""
+    moon = ephem.Moon()
+    observer = ephem.Observer()
+    observer.date = datetime.utcnow()
+    moon.compute(observer)
+    # Convert from AU to km (1 AU ≈ 149,597,870.7 km)
+    distance_km = moon.earth_distance * 149597870.7
+    return round(distance_km)
+
+def get_fun_fact():
+    """Return a random moon fact"""
+    facts = [
+        "drifts 3.8cm away from Earth each year",
+        "has quakes called 'moonquakes' that can last up to an hour",
+        "is slowly slowing Earth's rotation",
+        "has no atmosphere, so there's no weather",
+        "appears the same size as the Sun from Earth due to cosmic coincidence",
+        "has a day that lasts about 29.5 Earth days",
+        "is the fifth largest moon in our solar system",
+        "causes Earth's tides through gravitational pull",
+        "always shows the same face to Earth due to tidal locking",
+        "has temperatures ranging from -173°C to 127°C"
+    ]
+    return random.choice(facts)
+
+def get_photography_tip(phase_name):
+    """Return technical photography settings based on moon phase"""
+    tips = {
+        "New Moon": "ISO 3200-6400, f/2.8-f/4, 15-30s exposure for deep sky. Use manual focus at infinity. Stack multiple frames to reduce noise.",
+        "Waxing Crescent": "ISO 400-800, f/5.6-f/8, 1/60-1/125s for lit portion. Bracket exposures ±2 EV to capture earthshine detail.",
+        "First Quarter": "ISO 100-200, f/8-f/11, 1/125-1/250s. Optimal terminator contrast for surface detail. Use 300mm+ focal length.",
+        "Waxing Gibbous": "ISO 200-400, f/8-f/11, 1/250-1/500s. HDR bracketing recommended for mare and highland detail preservation.",
+        "Full Moon": "ISO 100, f/11-f/16, 1/250-1/500s. Use lunar mode or spot metering. 400mm+ recommended for maximum surface resolution.",
+        "Waning Gibbous": "ISO 100-200, f/8-f/11, 1/125-1/250s. Morning shoot requires faster shutter to freeze atmospheric turbulence.",
+        "Last Quarter": "ISO 100-200, f/8-f/11, 1/125-1/250s. Western terminator visible. Best atmospheric seeing 2-3 hours before sunrise.",
+        "Waning Crescent": "ISO 400-800, f/5.6-f/8, 1/60-1/125s. Pre-dawn shoot with graduated ND filter for sky balance if including foreground."
+    }
+    return tips.get(phase_name, "ISO 100-200, f/8-f/11, 1/125-1/250s baseline. Tripod and remote shutter essential for sharp results.")
 
 def get_moon_phase():
     """Calculate current moon phase and return details"""
@@ -90,9 +131,15 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
     with open(moon_data['image_file'], 'rb') as f:
         image_data = f.read()
     
+    # Get enhanced data
+    distance = get_moon_distance()
+    fun_fact = get_fun_fact()
+    photo_tip = get_photography_tip(moon_data['name'])
+    
     # Create embed message
     embed = {
         "title": f"🌙 {moon_data['name']}",
+        "description": f"The moon is currently **{distance:,} km** away and {fun_fact}.",
         "color": 0x2C2F33,
         "fields": [
             {
@@ -109,6 +156,11 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
                 "name": "Next New Moon",
                 "value": moon_data['next_new'],
                 "inline": True
+            },
+            {
+                "name": "Photography Tip",
+                "value": photo_tip,
+                "inline": False
             }
         ],
         "image": {
@@ -116,7 +168,7 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
         },
         "timestamp": datetime.utcnow().isoformat(),
         "footer": {
-            "text": "Outlaw on watch duty"
+            "text": f"Outlaw on watch duty • Updated {datetime.utcnow().strftime('%I:%M %p UTC')}"
         }
     }
     
