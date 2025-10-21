@@ -139,7 +139,6 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
     # Create embed message
     embed = {
         "title": f"🌙 {moon_data['name']}",
-        "description": f"The moon is currently **{distance:,} km** away and {fun_fact}.",
         "color": 0x2C2F33,
         "fields": [
             {
@@ -158,7 +157,22 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
                 "inline": True
             },
             {
-                "name": "Photography Tip",
+                "name": "Distance",
+                "value": f"{distance:,} km",
+                "inline": True
+            },
+            {
+                "name": "Moon Fact",
+                "value": fun_fact.capitalize(),
+                "inline": True
+            },
+            {
+                "name": "\u200b",
+                "value": "\u200b",
+                "inline": True
+            },
+            {
+                "name": "Camera Settings",
                 "value": photo_tip,
                 "inline": False
             }
@@ -168,7 +182,7 @@ def delete_and_post_discord_message(webhook_url, moon_data, message_id=None):
         },
         "timestamp": datetime.utcnow().isoformat(),
         "footer": {
-            "text": f"Outlaw on watch duty • Updated {datetime.utcnow().strftime('%I:%M %p UTC')}"
+            "text": "Outlaw on watch duty"
         }
     }
     
